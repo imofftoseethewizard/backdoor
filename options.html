@@ -1,0 +1,31 @@
+<html>
+<head><title>Backdoor Options</title></head>
+<script type="text/javascript">
+
+function save_options() {
+  localStorage['socket_url'] = document.getElementById("url").value;
+  var status = document.getElementById("status");
+  status.innerHTML = "Options Saved.";
+  setTimeout(function() {
+    status.innerHTML = "";
+  }, 750);
+}
+
+// Restores select box state to saved value from localStorage.
+function restore_options() {
+  var url = localStorage['socket_url'];
+  if (url)
+    document.getElementById("url").value = localStorage['socket_url'];
+}
+
+</script>
+
+<body onload="restore_options()">
+
+REPL-client URL
+<input id="url"></input>
+
+<br>
+<button onclick="save_options()">Save</button>
+</body>
+</html>
