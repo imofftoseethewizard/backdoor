@@ -32,6 +32,7 @@ Closes a channel and its associated tab.
 
       (function () {
         var tabs = {};
+        var inits = {};
 	var socket_url = localStorage['socket_url'] || "ws://localhost:8080/repl-proxy";
 
 	chrome.tabs.onRemoved.addListener(function(tab_id, info) {
@@ -107,6 +108,23 @@ Closes a channel and its associated tab.
 	  }
 	}
 
+        function cache_init(name, contents) {
+          inits[name] = contents;
+          return 'ok';
+        }
+
+        chrome.extension.onRequest.addListener(
+          function(request, sender, respondent) {
+            var init;
+            try {
+              if ((name = request['init-contents'])) {
+                respondent(inits[name]);
+              }
+            } catch(e) {
+              console.log(e);
+            }
+          });
+        
 	function backdoor(channel_name, socket_url) {
 	  var schedule = [0, 1, 2, 4, 8, 15, 30, 60, 120, 240];
 	  (function connect(retry) {
@@ -125,20 +143,27 @@ Closes a channel and its associated tab.
 		  retry.shift();
 		connect(retry);
 	      });
+              function eval_handler(code) {
+		var result;
+		try {
+		  result = JSON.stringify(eval(code));
+		} catch(e) {
+		  result = e;
+		}
+		socket.send(result);
+              }
 	      socket.addEventListener('message', function(evt) {
 		var data = evt.data;
+                var match;
 		console.log('message[' + channel_name + ']: ' + data);
 		if (data == '@name') {
-		    socket.send(channel_name);
-		} else {
-		  var result;
-		  try {
-		    result = JSON.stringify(eval(data));
-		  } catch(e) {
-		    result = e;
-		  }
-		  socket.send(result);
-		}
+		  socket.send(channel_name);
+                }
+                else if ((match = data.match(/^@init:\s*(.*)$/))) {
+	          chrome.extension.sendRequest({ 'init-contents': match[1] }, eval_handler);
+	        } else {
+                  eval_handler(data);
+                }
 	      });
 	    }, 1000.0*retry[0]);
 	  })(schedule.slice(0));
